@@ -1,0 +1,27 @@
+.history-list {
+  padding: 1rem;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 0 8px rgba(0,0,0,0.1);
+  margin-top: 20px;
+  position: fixed;
+  z-index: 20;
+}
+
+.history-list h3 {
+  font-size: 1.2rem;
+  margin-bottom: 1rem;
+}
+
+.history-item {
+  padding: 0.75rem;
+  border-bottom: 1px solid #eee;
+}
+
+.history-item.accept {
+  color: #0a963c;
+}
+
+.history-item.reject {
+  color: #c70039;
+}

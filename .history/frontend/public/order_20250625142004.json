@@ -1,0 +1,19 @@
+{
+    "ORD123": {
+      "customerId": "CUST001",
+      "products": [
+        {
+          "productId": "PROD001",
+          "name": "Boat AirPods 131",
+          "specs": "Color: Blue, Model: 131"
+        
+        }
+      ],
+      "customerHistory": {
+        "totalReturns": 3,
+        "flaggedReturns": 1,
+        "firstTimeReturn": false
+      }
+    }
+  }
+  
