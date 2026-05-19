@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react';
-import App from './App';
+import {
+  getDecisionLabel,
+  normalizeDecision,
+} from "./utils/returnStatus";
 
-test('renders learn react link', () => {
-  render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+test("maps manual verification results to the review state", () => {
+  expect(normalizeDecision("Manual Verification")).toBe("review");
+  expect(getDecisionLabel("Manual Verification")).toBe("Manual Review");
 });

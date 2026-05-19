@@ -1,201 +1,171 @@
-import React, { useEffect, useState } from "react";
-import {
-  collection,
-  getDocs,
-  orderBy,
-  query,
-  doc,
-  deleteDoc,
-  updateDoc
-} from "firebase/firestore";
-import { db } from "../../firebase/config";
-import Sidebar from "../Sidebar";
+import React, { useMemo, useState } from "react";
 import "../AdminPanel.css";
+import {
+  getDecisionClassName,
+  getDecisionLabel,
+  normalizeDecision,
+} from "../../utils/returnStatus";
 
-function ViewReturns({ onLogout }) {
-  const [collapsed, setCollapsed] = useState(false);
-  const [currentPage, setCurrentPage] = useState("dashboard");
-  const [orderData, setOrderData] = useState({});
-  const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
+function ViewReturns({
+  history,
+  loading,
+  orderData,
+  onUpdateDecision,
+  onDeleteRequest,
+  onRefresh,
+  error,
+}) {
+  const [filter, setFilter] = useState("all");
 
-  // Load local order data from JSON
-  useEffect(() => {
-    fetch("/order.json")
-      .then((res) => res.json())
-      .then((data) => setOrderData(data));
-  }, []);
+  const filteredHistory = useMemo(() => {
+    if (filter === "all") {
+      return history;
+    }
 
-  // Fetch return history from Firestore
-  useEffect(() => {
-    const fetchHistory = async () => {
-      try {
-        const q = query(
-          collection(db, "popupHistory"),
-          orderBy("timestamp", "desc")
-        );
-        const snapshot = await getDocs(q);
-        const data = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setHistory(data);
-      } catch (err) {
-        console.error("Error fetching return requests:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchHistory();
-  }, []);
-
-  // Delete a request from Firestore
-  const deleteRequest = async (id) => {
-    await deleteDoc(doc(db, "popupHistory", id));
-    setHistory((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  // Update final decision in Firestore
-  const updateDecision = async (id, finalDecision) => {
-    await updateDoc(doc(db, "popupHistory", id), { finalDecision });
-    setHistory((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, finalDecision } : item
-      )
+    return history.filter(
+      (item) => normalizeDecision(item.finalDecision) === filter
     );
-  };
+  }, [filter, history]);
 
-  // Stats
-  const total = history.length;
-  const accepted = history.filter(
-    (i) => i.finalDecision?.toLowerCase() === "accept"
-  ).length;
-  const rejected = history.filter(
-    (i) => i.finalDecision?.toLowerCase() === "reject"
-  ).length;
-
-  // Render return request content
-  const renderContent = () => {
-    return (
-      <div>
-        <h2>Detailed Return Requests</h2>
-        <div className="stats-bar">
-          <span>Total: {total}</span>
-          <span>✅ Accepted: {accepted}</span>
-          <span>❌ Rejected: {rejected}</span>
-        </div>
-
-        {loading ? (
-          <p>Loading requests...</p>
-        ) : history.length === 0 ? (
-          <p>No return requests found.</p>
-        ) : (
-          <div className="card-grid">
-            {history.map((item) => {
-              const product =
-                orderData[item.orderId]?.products.find(
-                  (p) => p.productId === item.productId
-                ) || {};
-
-              return (
-                <div
-                  key={item.id}
-                  className={`return-card ${
-                    item.finalDecision?.toLowerCase() === "accept"
-                      ? "accepted"
-                      : "rejected"
-                  }`}
-                >
-                  <div className="card-header">
-                    <div>
-                      <strong>User:</strong> {item.userEmail || "Unknown"}
-                      <br />
-                      <strong>Order ID:</strong> {item.orderId}
-                      <br />
-                      <strong>Product ID:</strong> {item.productId}
-                    </div>
-                    <div
-                      className={`status-pill ${
-                        item.finalDecision?.toLowerCase() === "accept"
-                          ? "pill-accept"
-                          : "pill-reject"
-                      }`}
-                    >
-                      Status: {item.finalDecision}
-                    </div>
-                  </div>
-
-                  <hr />
-
-                  <div className="card-body">
-                    {product.url ? (
-                      <img
-                        src={product.url}
-                        alt="Product"
-                        className="img-placeholder"
-                      />
-                    ) : (
-                      <div className="img-placeholder" />
-                    )}
-
-                    <div className="card-details">
-                      <p className="product-title">
-                        {product.name} <b>{product.specs}</b>
-                      </p>
-                      <p className="return-reason">
-                        Reason: {item.reason}
-                      </p>
-                      <p className="return-reason">
-                        Observation: {item.adminObservation}
-                      </p>
-                    </div>
-
-                    <div className="card-meta">
-                      <p>
-                        <b>Requested On:</b>
-                        <br />
-                        {item.timestamp?.seconds &&
-                          new Date(
-                            item.timestamp.seconds * 1000
-                          ).toLocaleString()}
-                      </p>
-                      <p>
-                        <b>Customer Message:</b>
-                        <br />
-                        {item.customerMessage || "N/A"}
-                      </p>
-                    </div>
-
-                    <div className="admin-actions">
-                      <button
-                        onClick={() => updateDecision(item.id, "Accept")}
-                      >
-                        ✅ Mark Accept
-                      </button>
-                      <button
-                        onClick={() => updateDecision(item.id, "Reject")}
-                      >
-                        ❌ Mark Reject
-                      </button>
-                      <button onClick={() => deleteRequest(item.id)}>
-                        🗑️ Delete
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  };
+  const filterOptions = [
+    { key: "all", label: "All" },
+    { key: "accept", label: "Approved" },
+    { key: "review", label: "Manual review" },
+    { key: "reject", label: "Rejected" },
+  ];
 
   return (
-    <div className="admin-container">
-      <div className={`content-area ${collapsed ? "collapsed" : ""}`}>
-        {renderContent()}
+    <div className="view-returns-page">
+      <div className="page-header">
+        <div>
+          <p className="section-label">Return queue</p>
+          <h1>Detailed request review</h1>
+          <p>
+            Inspect each request, compare the AI result with the supporting
+            details, and set the final outcome for the record.
+          </p>
+        </div>
+        <button className="toolbar-button" type="button" onClick={onRefresh}>
+          Refresh queue
+        </button>
       </div>
+
+      {error ? <div className="admin-alert">{error}</div> : null}
+
+      <div className="toolbar-row">
+        {filterOptions.map((option) => (
+          <button
+            key={option.key}
+            className={`filter-chip ${filter === option.key ? "active" : ""}`}
+            type="button"
+            onClick={() => setFilter(option.key)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="admin-card">
+          <p className="admin-empty">Loading requests...</p>
+        </div>
+      ) : filteredHistory.length === 0 ? (
+        <div className="admin-card">
+          <p className="admin-empty">No requests match the current filter.</p>
+        </div>
+      ) : (
+        <div className="request-list">
+          {filteredHistory.map((item) => {
+            const product =
+              orderData[item.orderId]?.products.find(
+                (candidate) => candidate.productId === item.productId
+              ) || {};
+
+            return (
+              <article className="request-list-card" key={item.id}>
+                <div className="request-list-card__header">
+                  <div>
+                    <strong>{item.userEmail || "Unknown user"}</strong>
+                    <p>
+                      Order {item.orderId} | Product {item.productId}
+                    </p>
+                  </div>
+                  <span
+                    className={`status-pill ${getDecisionClassName(
+                      item.finalDecision
+                    )}`}
+                  >
+                    {getDecisionLabel(item.finalDecision)}
+                  </span>
+                </div>
+
+                <div className="request-list-card__body">
+                  <div className="request-list-card__image">
+                    {product.url ? (
+                      <img src={product.url} alt={product.name || item.productId} />
+                    ) : null}
+                  </div>
+
+                  <div className="request-list-card__copy">
+                    <h3>{product.name || "Unknown product"}</h3>
+                    <p>{product.specs || "No catalog specs available."}</p>
+                    <p>
+                      <strong>Reason:</strong> {item.reason}
+                    </p>
+                    <p>
+                      <strong>Observation:</strong>{" "}
+                      {item.adminObservation || "No AI observation returned."}
+                    </p>
+                    <p>
+                      <strong>Customer message:</strong>{" "}
+                      {item.customerMessage || "No customer message available."}
+                    </p>
+                    <div className="request-list-card__meta">
+                      <span>
+                        Requested{" "}
+                        {item.timestamp?.seconds
+                          ? new Date(item.timestamp.seconds * 1000).toLocaleString()
+                          : "Waiting for timestamp"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="request-list-card__actions">
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={() => onUpdateDecision(item.id, "Accept")}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={() => onUpdateDecision(item.id, "Manual Verification")}
+                    >
+                      Manual review
+                    </button>
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={() => onUpdateDecision(item.id, "Reject")}
+                    >
+                      Reject
+                    </button>
+                    <button
+                      className="danger-button"
+                      type="button"
+                      onClick={() => onDeleteRequest(item.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

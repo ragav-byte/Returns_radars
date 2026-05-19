@@ -1,140 +1,231 @@
 import React, { useEffect, useState } from "react";
-import { collection, getDocs, orderBy, query, doc, deleteDoc, updateDoc } from "firebase/firestore";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  orderBy,
+  query,
+  updateDoc,
+} from "firebase/firestore";
 import { db } from "../firebase/config";
 import Sidebar from "./Sidebar";
 import ManageUsers from "./pages/ManageUsers";
 import ViewReturns from "./pages/ViewReturns";
-import Page3 from "./pages/Page3";
-import Page4 from "./pages/Page4";
 import "./AdminPanel.css";
-import mobileScreenError from './mobile_screen_error.png';
+import {
+  getDecisionClassName,
+  getDecisionLabel,
+  normalizeDecision,
+} from "../utils/returnStatus";
 
-function AdminPanel({ onLogout }) {
+function AdminPanel({ user, onLogout, isSigningOut }) {
   const [collapsed, setCollapsed] = useState(false);
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [orderData, setOrderData] = useState({});
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState("");
 
   useEffect(() => {
     fetch("/order.json")
       .then((res) => res.json())
-      .then((data) => setOrderData(data));
+      .then((data) => setOrderData(data))
+      .catch((error) => {
+        console.error("Unable to load order data.", error);
+        setPageError("We could not load the order catalog.");
+      });
   }, []);
 
+  const loadHistory = async () => {
+    setLoading(true);
+
+    try {
+      const returnsQuery = query(
+        collection(db, "popupHistory"),
+        orderBy("timestamp", "desc")
+      );
+      const snapshot = await getDocs(returnsQuery);
+      const data = snapshot.docs.map((historyDoc) => ({
+        id: historyDoc.id,
+        ...historyDoc.data(),
+      }));
+      setHistory(data);
+      setPageError("");
+    } catch (error) {
+      console.error("Error fetching return requests:", error);
+      setPageError("We could not load the return request queue.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchHistory = async () => {
-      try {
-        const q = query(collection(db, "popupHistory"), orderBy("timestamp", "desc"));
-        const snapshot = await getDocs(q);
-        const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setHistory(data);
-      } catch (err) {
-        console.error("Error fetching return requests:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchHistory();
+    loadHistory();
   }, []);
 
   const deleteRequest = async (id) => {
-    await deleteDoc(doc(db, "popupHistory", id));
-    setHistory((prev) => prev.filter((item) => item.id !== id));
+    try {
+      await deleteDoc(doc(db, "popupHistory", id));
+      setHistory((prev) => prev.filter((item) => item.id !== id));
+    } catch (error) {
+      console.error("Unable to delete return request.", error);
+      setPageError("We could not delete that request.");
+    }
   };
 
   const updateDecision = async (id, finalDecision) => {
-    await updateDoc(doc(db, "popupHistory", id), { finalDecision });
-    setHistory((prev) => prev.map((item) => (item.id === id ? { ...item, finalDecision } : item)));
+    try {
+      await updateDoc(doc(db, "popupHistory", id), { finalDecision });
+      setHistory((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, finalDecision } : item
+        )
+      );
+    } catch (error) {
+      console.error("Unable to update the final decision.", error);
+      setPageError("We could not update that decision.");
+    }
   };
 
   const total = history.length;
-  const accepted = history.filter((i) => i.finalDecision?.toLowerCase() === "accept").length;
-  const rejected = history.filter((i) => i.finalDecision?.toLowerCase() === "reject").length;
+  const accepted = history.filter(
+    (item) => normalizeDecision(item.finalDecision) === "accept"
+  ).length;
+  const rejected = history.filter(
+    (item) => normalizeDecision(item.finalDecision) === "reject"
+  ).length;
+  const inReview = history.filter(
+    (item) => normalizeDecision(item.finalDecision) === "review"
+  ).length;
+
+  const renderOverview = () => (
+    <div className="admin-page">
+      <div className="admin-page__header">
+        <div>
+          <p className="section-label">Admin overview</p>
+          <h1>Returns operations dashboard</h1>
+          <p>
+            Monitor request volume, keep decisions consistent, and review the
+            latest activity across the return queue.
+          </p>
+        </div>
+
+        <button className="toolbar-button" type="button" onClick={loadHistory}>
+          Refresh queue
+        </button>
+      </div>
+
+      {pageError ? <div className="admin-alert">{pageError}</div> : null}
+
+      <div className="stats-grid">
+        <article className="stat-card">
+          <span>Total requests</span>
+          <strong>{total}</strong>
+        </article>
+        <article className="stat-card">
+          <span>Approved</span>
+          <strong>{accepted}</strong>
+        </article>
+        <article className="stat-card">
+          <span>Manual review</span>
+          <strong>{inReview}</strong>
+        </article>
+        <article className="stat-card">
+          <span>Rejected</span>
+          <strong>{rejected}</strong>
+        </article>
+      </div>
+
+      <section className="admin-card">
+        <div className="admin-card__header">
+          <div>
+            <p className="section-label">Latest requests</p>
+            <h2>Recent activity</h2>
+          </div>
+        </div>
+
+        {loading ? (
+          <p className="admin-empty">Loading requests...</p>
+        ) : history.length === 0 ? (
+          <p className="admin-empty">No return requests have been submitted yet.</p>
+        ) : (
+          <div className="request-grid">
+            {history.slice(0, 6).map((item) => {
+              const product =
+                orderData[item.orderId]?.products.find(
+                  (candidate) => candidate.productId === item.productId
+                ) || {};
+
+              return (
+                <article className="request-card" key={item.id}>
+                  <div className="request-card__header">
+                    <div>
+                      <strong>{product.name || item.productId}</strong>
+                      <p>{item.userEmail || "Unknown user"}</p>
+                    </div>
+                    <span
+                      className={`status-pill ${getDecisionClassName(
+                        item.finalDecision
+                      )}`}
+                    >
+                      {getDecisionLabel(item.finalDecision)}
+                    </span>
+                  </div>
+
+                  <p className="request-card__reason">{item.reason}</p>
+
+                  <div className="request-card__meta">
+                    <span>Order {item.orderId}</span>
+                    <span>
+                      {item.timestamp?.seconds
+                        ? new Date(item.timestamp.seconds * 1000).toLocaleString()
+                        : "Waiting for timestamp"}
+                    </span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </div>
+  );
 
   const renderContent = () => {
     switch (currentPage) {
       case "users":
         return <ManageUsers />;
       case "returns":
-        return <ViewReturns />;
-      case "page3":
-        return <Page3 />;
-      case "page4":
-        return <Page4 />;
-      default:
         return (
-          <>
-            <h2>📦 All Return Requests (Admin View)</h2>
-            <div className="stats-bar">
-              <div>
-                <p className="count-title">Total requests</p>
-                <p className="count">{total}</p>
-              </div>
-              <div>
-                <p className="count-title">Accepted requests</p>
-                <p className="count">{accepted}</p>
-              </div>
-              <div>
-                <p  className="count-title">Rejected requests</p>
-                <p className="count">{rejected}</p>
-              </div>
-            </div>
-
-            {loading ? (
-              <p>Loading requests...</p>
-            ) : history.length === 0 ? (
-              <p>No return requests found.</p>
-            ) : (
-              <div className="card-grid">
-                {history.map((item) => {
-                  const product = orderData[item.orderId]?.products.find(p => p.productId === item.productId) || {};
-                  return (
-                    <div key={item.id} className={`return-card ${item.finalDecision?.toLowerCase() === "accept" ? "accepted" : "rejected"}`}>
-                      <div className="card-header">
-                        <div className="card-top">
-                          <p><strong>User:</strong> {item.userEmail || "Unknown"}<br /></p>
-                          <p><strong>Order ID:</strong> {item.orderId}<br /></p>
-                          <p><strong>Product ID:</strong> {item.productId}</p>
-                        </div>
-                      </div>
-                      <hr />
-                      <div className="card-body">
-                        {product.url ? (
-                          <img src={product.url} alt="Product" className="img-placeholder" />
-                        ) : (
-                          <div className="img-placeholder" />
-                        )}
-                        <div className="card-details">
-                          <p className="product-title">{product.name} <br />{product.specs}</p>
-                          <p className="return-reason">Reason: {item.reason}</p>
-                        </div>
-                        <div className="card-meta">
-                          <p><b>Requested On:</b><br />{item.timestamp?.seconds && new Date(item.timestamp.seconds * 1000).toLocaleString()}</p>
-                             <div className={`status-pill ${item.finalDecision?.toLowerCase() === "accept" ? "pill-accept" : "pill-reject"}`}>
-                          Status: {item.finalDecision}
-                        </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
+          <ViewReturns
+            history={history}
+            loading={loading}
+            orderData={orderData}
+            onUpdateDecision={updateDecision}
+            onDeleteRequest={deleteRequest}
+            onRefresh={loadHistory}
+            error={pageError}
+          />
         );
+      default:
+        return renderOverview();
     }
   };
 
   return (
-    <div className="admin-container">
-      <Sidebar collapsed={collapsed} toggleSidebar={() => setCollapsed(!collapsed)} onNavigate={setCurrentPage} />
+    <div className="admin-shell">
+      <Sidebar
+        collapsed={collapsed}
+        toggleSidebar={() => setCollapsed((value) => !value)}
+        onNavigate={setCurrentPage}
+        currentPage={currentPage}
+        onLogout={onLogout}
+        user={user}
+        isSigningOut={isSigningOut}
+      />
       <div className={`content-area ${collapsed ? "collapsed" : ""}`}>
         {renderContent()}
-      </div>
-      <div className="mobile">
-        
-       <img className="mobile-img" src={mobileScreenError} alt="Mobile screen error" />
       </div>
     </div>
   );

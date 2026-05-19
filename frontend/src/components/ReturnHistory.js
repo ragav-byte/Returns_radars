@@ -1,14 +1,23 @@
 import React, { useEffect, useState } from "react";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  orderBy,
+  query,
+  where,
+} from "firebase/firestore";
 import { db } from "../firebase/config";
 import "./ReturnHistory.css";
+import {
+  getDecisionClassName,
+  getDecisionLabel,
+} from "../utils/returnStatus";
 
-function ReturnHistory({ user }) {
+function ReturnHistory({ user, onClose }) {
   const [orderData, setOrderData] = useState({});
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Load order.json
   useEffect(() => {
     fetch("/order.json")
       .then((res) => res.json())
@@ -17,25 +26,24 @@ function ReturnHistory({ user }) {
       });
   }, []);
 
-  // Fetch history from Firestore
   useEffect(() => {
     if (!user?.email) return;
 
     const fetchHistory = async () => {
       try {
-        const q = query(
+        const historyQuery = query(
           collection(db, "popupHistory"),
           where("userEmail", "==", user.email),
           orderBy("timestamp", "desc")
         );
-        const snapshot = await getDocs(q);
-        const data = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
+        const snapshot = await getDocs(historyQuery);
+        const data = snapshot.docs.map((historyDoc) => ({
+          id: historyDoc.id,
+          ...historyDoc.data(),
         }));
         setHistory(data);
-      } catch (err) {
-        console.error("Error fetching return history:", err);
+      } catch (error) {
+        console.error("Error fetching return history:", error);
       } finally {
         setLoading(false);
       }
@@ -45,89 +53,78 @@ function ReturnHistory({ user }) {
   }, [user]);
 
   return (
-    <div className="history-container-2">
-      <h3>📜 Your Return History</h3>
-
-      {loading ? (
-        <p>Loading...</p>
-      ) : history.length === 0 ? (
-        <p>No returns yet!</p>
-      ) : (
-        <div className="card-grid">
-          {history.map((item) => {
-            const product =
-              orderData[item.orderId]?.products.find(
-                (p) => p.productId === item.productId
-              ) || {};
-
-            return (
-              <div
-                key={item.id}
-                className={`return-card ${
-                  item.finalDecision?.toLowerCase() === "accept"
-                    ? "accepted"
-                    : "rejected"
-                }`}
-              >
-                <div className="card-header">
-                  <div>
-                    <strong>Order Id:</strong> {item.orderId} &nbsp;&nbsp;
-                    <strong>Product Id:</strong> {item.productId}
-                  </div>
-                  <div
-                    className={`status-pill ${
-                      item.finalDecision?.toLowerCase() === "accept"
-                        ? "pill-accept"
-                        : "pill-reject"
-                    }`}
-                  >
-                    Status: {item.finalDecision}
-                  </div>
-                </div>
-                <hr />
-                <div className="card-body">
-                  {product.url ? (
-                    <img
-                      src={product.url}
-                      alt="Product"
-                      className="img-placeholder"
-                    />
-                  ) : (
-                    <div className="img-placeholder" />
-                  )}
-
-                  <div className="card-details">
-                    <p className="product-title">
-                      {product.name} <b>{product.specs}</b>
-                    </p>
-                    {/*<p className="product-desc">{product.description || "No description available."}</p>*/}
-                    <p className="return-reason">Reason for return: {item.reason}</p>
-                  </div>
-
-                  <div className="card-meta">
-                    <p>
-                      <b>Date of request:</b>
-                      <br />
-                       {item.timestamp?.seconds &&
-                  new Date(item.timestamp.seconds * 1000).toLocaleString()}
-                    </p>
-                    <p>
-                      <b>Decision:</b>
-                      <br />
-                      {item.finalDecision}
-                    </p>
-                    <p>
-                      <b>Rejection Reason:</b>
-                      <br />
-                      {item.customerMessage || "N/A"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+    <div className="history-overlay">
+      <div className="history-container-2">
+        <div className="history-header">
+          <div>
+            <p className="section-label">Saved requests</p>
+            <h3>Your return history</h3>
+          </div>
+          <button className="history-close" type="button" onClick={onClose}>
+            Close
+          </button>
         </div>
-      )}
+
+        {loading ? (
+          <p className="history-empty">Loading your request history...</p>
+        ) : history.length === 0 ? (
+          <p className="history-empty">You have not submitted any returns yet.</p>
+        ) : (
+          <div className="history-list">
+            {history.map((item) => {
+              const product =
+                orderData[item.orderId]?.products.find(
+                  (productItem) => productItem.productId === item.productId
+                ) || {};
+
+              return (
+                <article className="history-card" key={item.id}>
+                  <div className="history-card__header">
+                    <div>
+                      <strong>{product.name || item.productId}</strong>
+                      <p>
+                        Order {item.orderId} | Product {item.productId}
+                      </p>
+                    </div>
+                    <span
+                      className={`status-pill ${getDecisionClassName(
+                        item.finalDecision
+                      )}`}
+                    >
+                      {getDecisionLabel(item.finalDecision)}
+                    </span>
+                  </div>
+
+                  <div className="history-card__body">
+                    <div className="history-card__image">
+                      {product.url ? <img src={product.url} alt={product.name} /> : null}
+                    </div>
+
+                    <div className="history-card__copy">
+                      <p>
+                        <strong>Specs:</strong> {product.specs || "Not available"}
+                      </p>
+                      <p>
+                        <strong>Reason:</strong> {item.reason}
+                      </p>
+                      <p>
+                        <strong>Decision note:</strong>{" "}
+                        {item.customerMessage || "No message was generated."}
+                      </p>
+                      <p>
+                        <strong>Requested on:</strong>{" "}
+                        {item.timestamp?.seconds
+                          ? new Date(item.timestamp.seconds * 1000).toLocaleString()
+                          : "Waiting for timestamp"}
+                      </p>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

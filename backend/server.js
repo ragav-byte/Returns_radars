@@ -8,7 +8,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const path = require('path');
 
 const app = express();
-const port = 5000;
+const port = process.env.PORT || 5000;
 
 // Load local JSON helper
 function loadJSON(filePath) {
@@ -49,6 +49,10 @@ function computeProductTrustScore(productHistory) {
 
 // Gemini AI call
 async function queryGeminiAI({ imageBase64, returnReason, productSpecs, customerHistory, productHistory }) {
+    if (!process.env.GEMINI_API_KEY) {
+        throw new Error('Missing GEMINI_API_KEY in backend/.env');
+    }
+
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
@@ -111,6 +115,14 @@ app.post('/generate-return-review', upload.single('productMedia'), async (req, r
         const { orderId, productId, returnReason } = req.body;
         const productMedia = req.file;
 
+        if (!productMedia) {
+            return res.status(400).json({ error: 'Please upload a product image.' });
+        }
+
+        if (!orderId || !productId || !returnReason) {
+            return res.status(400).json({ error: 'Order ID, product ID, and return reason are required.' });
+        }
+
         // Load data
         const orderDB = loadJSON('./order.json');
         const productDB = loadJSON('./product_history.json');
@@ -169,7 +181,11 @@ app.post('/generate-return-review', upload.single('productMedia'), async (req, r
             structuredSummary = JSON.parse(jsonText);
         } catch (err) {
             console.error("Error parsing JSON summary from Gemini:", err);
-            structuredSummary = { error: 'Failed to parse Gemini summary.' };
+            structuredSummary = {
+                error: 'Failed to parse Gemini summary.',
+                finalDecision: 'Manual Verification',
+                customerMessage: 'We need a manual review before completing this request.'
+            };
         }
 
         // Parse Admin Review
@@ -191,15 +207,15 @@ app.post('/generate-return-review', upload.single('productMedia'), async (req, r
             colorMismatch: structuredSummary.colorMismatch,
             customerTrustScore: structuredSummary.customerTrustScore,
             productTrustScore: structuredSummary.productTrustScore,
-            finalDecision: structuredSummary.finalDecision,
-            customerMessage: structuredSummary.customerMessage,
+            finalDecision: structuredSummary.finalDecision || 'Manual Verification',
+            customerMessage: structuredSummary.customerMessage || 'We need a manual review before completing this request.',
             deliveryCheck: deliveryComment || "No delivery issues reported.",
             weightAnalysis: weightMismatchComment || "No major weight mismatch detected."
         });
 
     } catch (error) {
         console.error('Error processing return request:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+        res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });
 

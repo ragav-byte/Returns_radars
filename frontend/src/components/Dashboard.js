@@ -1,11 +1,13 @@
-import React, { useState,  useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import GeminiPopup from "./GeminiPopup";
 import ReturnHistory from "./ReturnHistory";
 import "./Dashboard.css";
-import { ReactComponent as Shape } from './steps-new.svg';
-import { ReactComponent as Walmart } from './walmart icon.svg';
-function Dashboard({ user, onLogout }) {
+import { ReactComponent as Walmart } from "./walmart icon.svg";
+
+const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+
+function Dashboard({ user, onLogout, isSigningOut }) {
   const [orderId, setOrderId] = useState("");
   const [productId, setProductId] = useState("");
   const [reason, setReason] = useState("");
@@ -13,176 +15,308 @@ function Dashboard({ user, onLogout }) {
   const [popupData, setPopupData] = useState(null);
   const [showPopup, setShowPopup] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-const [orderData, setOrderData] = useState({});
-const [productInfo, setProductInfo] = useState(null);
-const [currentView, setCurrentView] = useState("dashboard");
+  const [orderData, setOrderData] = useState({});
+  const [productInfo, setProductInfo] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [lookupError, setLookupError] = useState("");
+  const [submitError, setSubmitError] = useState("");
 
-
-
-const steps = [
+  const steps = [
     "Enter your Order ID and Product ID.",
-    "Describe the reason for your return.",
+    "Describe the return issue clearly and honestly.",
     "Upload a clear image of the product.",
-    "Click 'Submit Return Request'.",
+    "Submit the request for AI review.",
     "Wait for the AI to analyze your return.",
-    "You'll see a ✅ or ❌ popup result.",
+    "Review the decision and save the result to history.",
   ];
 
+  const trimmedOrderId = useMemo(() => orderId.trim().toUpperCase(), [orderId]);
+  const trimmedProductId = useMemo(
+    () => productId.trim().toUpperCase(),
+    [productId]
+  );
+  const canSubmit =
+    trimmedOrderId && trimmedProductId && reason.trim() && image && !isSubmitting;
 
   useEffect(() => {
-    // Load JSON on mount
-   fetch("/order.json")
-  .then((res) => res.json())
-  .then((data) => {
-    console.log("Loaded orders:", data); // ✅ debug check
-    setOrderData(data);
-  });
+    fetch("/order.json")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Could not load order data.");
+        }
 
+        return response.json();
+      })
+      .then((data) => {
+        setOrderData(data);
+        setLookupError("");
+      })
+      .catch((error) => {
+        console.error("Unable to load order data.", error);
+        setLookupError("We could not load the local order catalog.");
+      });
   }, []);
 
-useEffect(() => {
-  if (orderId && productId && orderData[orderId]) {
-    console.log("Checking product for:", orderId, productId);
-    const product = orderData[orderId].products.find(
-      (p) => p.productId === productId
+  useEffect(() => {
+    if (!trimmedOrderId || !trimmedProductId) {
+      setProductInfo(null);
+      return;
+    }
+
+    const matchingOrder = orderData[trimmedOrderId];
+
+    if (!matchingOrder) {
+      setProductInfo(null);
+      return;
+    }
+
+    const matchingProduct = matchingOrder.products.find(
+      (product) => product.productId.toUpperCase() === trimmedProductId
     );
-    console.log("Found product:", product);
-    setProductInfo(product || null);
-  } else {
-    setProductInfo(null);
-  }
-}, [orderId, productId, orderData]);
 
-  const handleSubmit = async (e) => {
-  e.preventDefault();
-  if (!image) return alert("Upload product image!");
+    setProductInfo(matchingProduct || null);
+  }, [orderData, trimmedOrderId, trimmedProductId]);
 
-  const formData = new FormData();
-  formData.append("orderId", orderId);
-  formData.append("productId", productId);
-  formData.append("returnReason", reason);
-  formData.append("productMedia", image);
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setSubmitError("");
 
-  try {
-    const res = await fetch("http://localhost:5000/generate-return-review", {
-      method: "POST",
-      body: formData,
-    });
+    if (!image) {
+      setSubmitError("Please upload a product image before submitting.");
+      return;
+    }
 
-    if (!res.ok) throw new Error("Network response was not ok");
+    setIsSubmitting(true);
 
-    const data = await res.json();
+    const formData = new FormData();
+    formData.append("orderId", trimmedOrderId);
+    formData.append("productId", trimmedProductId);
+    formData.append("returnReason", reason.trim());
+    formData.append("productMedia", image);
 
-    const enrichedData = {
-      ...data,
-      popupId: uuidv4(), // 💥 Important!
-      userEmail: user.email,
-      orderId,
-      productId,
-      reason,
-    };
+    try {
+      const response = await fetch(`${API_BASE_URL}/generate-return-review`, {
+        method: "POST",
+        body: formData,
+      });
 
-    setPopupData(enrichedData);
-    setShowPopup(true);
-  } catch (err) {
-    alert("Backend error: " + err.message);
-    console.error("Fetch error:", err);
-  }
-};
+      const responseBody = await response.json();
 
+      if (!response.ok) {
+        throw new Error(responseBody.error || "Unable to submit the return request.");
+      }
+
+      const enrichedData = {
+        ...responseBody,
+        popupId: uuidv4(),
+        userEmail: user.email,
+        orderId: trimmedOrderId,
+        productId: trimmedProductId,
+        reason: reason.trim(),
+      };
+
+      setPopupData(enrichedData);
+      setShowPopup(true);
+    } catch (error) {
+      console.error("Return submission failed.", error);
+      setSubmitError(error.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
-    <div className="body-main">
-      <div className="nav-bar">
-        <Walmart className="logo"/>
-        <div className="user-box">
-          <div className="user-logo"></div>
-          <h2>Welcome, {user.email}</h2>
+    <div className="dashboard-page">
+      <header className="dashboard-topbar">
+        <div className="brand-lockup">
+          <Walmart className="brand-logo" />
+          <div>
+            <p className="brand-label">ReturnsRadar</p>
+            <h1>Customer return desk</h1>
+          </div>
         </div>
-          <button className="logout-btn" onClick={onLogout}>Logout</button>
 
-   {showHistory && <ReturnHistory user={user} onClose={() => setShowHistory(false)} />}
+        <div className="dashboard-topbar__actions">
+          <div className="signed-in-pill">
+            <span className="signed-in-pill__avatar">
+              {user.email?.slice(0, 1).toUpperCase()}
+            </span>
+            <div>
+              <strong>{user.email}</strong>
+              <span>Signed in customer</span>
+            </div>
+          </div>
 
-<button className="clock-btn" onClick={() => setShowHistory(!showHistory)}>
-  {showHistory ? "Return Form" : "View History"}
-</button>
-      </div>
-    <div className="dash-body">    
-    <div className="dash-container">
-     <div className="dash-header">
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => setShowHistory((visible) => !visible)}
+          >
+            {showHistory ? "Hide history" : "View history"}
+          </button>
+          <button
+            className="ghost-button"
+            type="button"
+            onClick={onLogout}
+            disabled={isSigningOut}
+          >
+            {isSigningOut ? "Signing out..." : "Sign out"}
+          </button>
+        </div>
+      </header>
 
-      </div>
-<h2 className="dash-heading">Product return form</h2>
+      <main className="dashboard-main">
+        <section className="dashboard-hero panel">
+          <div>
+            <p className="section-label">Welcome back</p>
+            <h2>Submit cleaner requests and review decisions faster.</h2>
+            <p>
+              Use the form to send a return request through AI review. Matching
+              product details will appear automatically when the order and
+              product IDs line up.
+            </p>
+          </div>
+          <div className="hero-stat">
+            <span>Ready to review</span>
+            <strong>{productInfo ? "Product matched" : "Awaiting lookup"}</strong>
+          </div>
+        </section>
 
-      <form onSubmit={handleSubmit} className="return-form">
-        <p className="inp-plc-hld">Order ID</p>
-        <input className="text-input"
-          type="text"
-          placeholder="Ex. ORD123"
-          value={orderId}
-          onChange={(e) => setOrderId(e.target.value)}
-          required
-        />
-        <p className="inp-plc-hld">Product ID</p>
-        <input className="text-input"
-          type="text"
-          placeholder="Ex. PROD001"
-          value={productId}
-          onChange={(e) => setProductId(e.target.value)}
-          required
-        />
-        <p className="inp-plc-hld">Return description</p>
-        <textarea className="text-input-desc"
-          placeholder="Enter reason for return"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          required
-        />
-        <p className="inp-plc-hld">Product image</p>
-        <input className="text-input"
-          type="file"
-          accept="image/*"
-          onChange={(e) => setImage(e.target.files[0])}
-          required
-        />
-        <button type="submit">Submit Return</button>
-      </form>
+        <div className="dashboard-grid">
+          <section className="panel return-panel">
+            <div className="panel-header">
+              <div>
+                <p className="section-label">Return request</p>
+                <h3>Submit a product return</h3>
+              </div>
+              <span className="panel-chip">AI review</span>
+            </div>
 
-      {showPopup && popupData && (
+            <form onSubmit={handleSubmit} className="return-form">
+              <label className="field-block">
+                <span>Order ID</span>
+                <input
+                  className="text-input"
+                  type="text"
+                  placeholder="ORD123"
+                  value={orderId}
+                  onChange={(event) => setOrderId(event.target.value.toUpperCase())}
+                  required
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Product ID</span>
+                <input
+                  className="text-input"
+                  type="text"
+                  placeholder="PROD001"
+                  value={productId}
+                  onChange={(event) =>
+                    setProductId(event.target.value.toUpperCase())
+                  }
+                  required
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Return description</span>
+                <textarea
+                  className="text-input text-area"
+                  placeholder="Explain the issue with the item"
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  required
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Product image</span>
+                <div className="upload-box">
+                  <input
+                    className="file-input"
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => setImage(event.target.files?.[0] || null)}
+                    required
+                  />
+                  <p>{image ? image.name : "Choose a clear photo of the item"}</p>
+                </div>
+              </label>
+
+              {lookupError ? <p className="form-message error">{lookupError}</p> : null}
+              {!lookupError && trimmedOrderId && trimmedProductId && !productInfo ? (
+                <p className="form-message warning">
+                  We could not find that order and product combination in the local
+                  catalog yet.
+                </p>
+              ) : null}
+              {submitError ? <p className="form-message error">{submitError}</p> : null}
+
+              <button className="primary-button" type="submit" disabled={!canSubmit}>
+                {isSubmitting ? "Submitting..." : "Submit return"}
+              </button>
+            </form>
+          </section>
+
+          <div className="dashboard-side-column">
+            <section className="panel product-panel">
+              <div className="panel-header">
+                <div>
+                  <p className="section-label">Matched product</p>
+                  <h3>Product details</h3>
+                </div>
+              </div>
+
+              {productInfo ? (
+                <div className="product-card">
+                  <div className="product-card__image">
+                    <img src={productInfo.url} alt={productInfo.name} />
+                  </div>
+                  <div className="product-card__copy">
+                    <h4>{productInfo.name}</h4>
+                    <p>{productInfo.specs}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="empty-card">
+                  <h4>No product selected yet</h4>
+                  <p>
+                    Enter a valid order ID and product ID to preview the item
+                    details before you submit.
+                  </p>
+                </div>
+              )}
+            </section>
+
+            <section className="panel steps-panel">
+              <div className="panel-header">
+                <div>
+                  <p className="section-label">Workflow</p>
+                  <h3>How the review works</h3>
+                </div>
+              </div>
+              <ol className="steps-list">
+                {steps.map((step, index) => (
+                  <li key={step}>
+                    <span>{index + 1}</span>
+                    <p>{step}</p>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          </div>
+        </div>
+      </main>
+
+      {showHistory ? (
+        <ReturnHistory user={user} onClose={() => setShowHistory(false)} />
+      ) : null}
+
+      {showPopup && popupData ? (
         <GeminiPopup data={popupData} onClose={() => setShowPopup(false)} />
-      )}
-
+      ) : null}
     </div>
-
-    <div className="flex-2">
-    {productInfo && (
-  <div className="product-info-box">
-      <h2 className="dash-heading">Product details</h2>
-    <div className="prod-box">
-        <p className="prod-name-text">{productInfo.name}</p>
-        <p className="prod-name-specs">{productInfo.specs}</p>
-        <div className="prod-img-box">
-          <img className="prod-name-img" src={productInfo.url}></img>
-        </div>
-    </div>
-  </div>
-)}
-
- <div className="steps-container">
-      <h2 className="dash-heading">How to Submit a Return</h2>
-       <Shape className="background-shape" />
-      <ul className="steps-list">
-        {steps.map((step, index) => (
-          <li key={index} className="steps-listItem">
-            {step}
-          </li>
-        ))}
-      </ul>
-    </div>
-
-    </div>
-  </div>
-  </div>
   );
 }
 

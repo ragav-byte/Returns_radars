@@ -36,3 +36,53 @@
     transform: rotate(360deg);
   }
 }
+body {
+  margin: 0;
+}
+
+.app-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(0, 83, 226, 0.14), transparent 35%),
+    linear-gradient(180deg, #f4f7fb 0%, #eef3f8 100%);
+}
+
+.app-loading-card {
+  width: min(520px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 120px 32px;
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.app-loading-card h1 {
+  margin: 12px 0;
+  color: #0f172a;
+  font-size: clamp(2rem, 4vw, 3rem);
+}
+
+.app-loading-card p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.app-kicker {
+  color: #0053e2;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app-banner {
+  margin: 0 auto;
+  padding: 14px 18px;
+  width: min(1100px, calc(100% - 32px));
+  border-radius: 14px;
+  background: #fff7ed;
+  color: #9a3412;
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
+}
