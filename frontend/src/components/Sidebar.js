@@ -4,11 +4,12 @@ import {
   FaClipboardList,
   FaHome,
   FaSignOutAlt,
+  FaStar,
   FaTimes,
+  FaUser,
   FaUsers,
 } from "react-icons/fa";
 import "./Sidebar.css";
-import { ReactComponent as Walmart } from "./walmart icon.svg";
 
 function Sidebar({
   collapsed,
@@ -39,7 +40,9 @@ function Sidebar({
           type="button"
           onClick={() => onNavigate("dashboard")}
         >
-          <Walmart className="sidebar-logo" />
+          <span className="sidebar-star" aria-hidden="true">
+            <FaStar />
+          </span>
           {!collapsed ? (
             <span>
               <strong>ReturnsRadar</strong>
@@ -67,7 +70,7 @@ function Sidebar({
       <div className="sidebar-footer">
         <div className="profile-box">
           <span className="profile-avatar">
-            {user?.email?.slice(0, 1).toUpperCase()}
+            <FaUser />
           </span>
           {!collapsed ? (
             <div className="info">

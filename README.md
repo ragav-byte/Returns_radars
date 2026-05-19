@@ -30,6 +30,7 @@ Create `backend/.env` with at least:
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-2.5-flash
 PORT=5000
 ```
 

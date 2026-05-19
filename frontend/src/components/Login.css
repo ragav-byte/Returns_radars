@@ -4,6 +4,7 @@
   grid-template-columns: minmax(360px, 520px) minmax(420px, 1fr);
   gap: 24px;
   padding: 24px;
+  font-size: 0.96rem;
 }
 
 .login-panel,
@@ -40,14 +41,15 @@
 .login-title {
   margin: 0;
   color: var(--text);
-  font-size: clamp(2.1rem, 5vw, 3rem);
+  font-size: clamp(1.95rem, 4.4vw, 2.7rem);
   line-height: 1.1;
 }
 
 .login-subtitle {
   margin: 16px 0 0;
   color: var(--text-muted);
-  line-height: 1.65;
+  line-height: 1.6;
+  font-size: 0.94rem;
 }
 
 .login-alert {
@@ -71,7 +73,7 @@
   flex-direction: column;
   gap: 10px;
   color: var(--text);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 600;
 }
 
@@ -116,7 +118,7 @@
   border-radius: 16px;
   background: linear-gradient(135deg, var(--brand) 0%, #0b66ff 100%);
   color: #ffffff;
-  font-size: 1rem;
+  font-size: 0.94rem;
   font-weight: 700;
   box-shadow: 0 18px 32px rgba(0, 83, 226, 0.24);
 }
@@ -140,7 +142,7 @@
   background: none;
   padding: 0;
   color: var(--brand);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 700;
 }
 
@@ -158,7 +160,7 @@
 
 .login-hero__copy h2 {
   margin: 0;
-  font-size: clamp(2rem, 4vw, 3.4rem);
+  font-size: clamp(1.8rem, 3.6vw, 3rem);
   line-height: 1.08;
 }
 
@@ -166,7 +168,8 @@
   margin: 18px 0 0;
   color: rgba(255, 255, 255, 0.82);
   max-width: 620px;
-  line-height: 1.7;
+  line-height: 1.65;
+  font-size: 0.95rem;
 }
 
 .login-image {

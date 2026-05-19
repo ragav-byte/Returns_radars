@@ -9,6 +9,12 @@ const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 5000;
+const DEFAULT_GEMINI_MODELS = [
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-2.5-flash-lite'
+];
+let activeGeminiModel = null;
 
 // Load local JSON helper
 function loadJSON(filePath) {
@@ -47,6 +53,24 @@ function computeProductTrustScore(productHistory) {
     return Math.max(0, Math.min(score, 100));
 }
 
+function getGeminiModelCandidates() {
+    const configuredModels = (process.env.GEMINI_MODEL_CANDIDATES || process.env.GEMINI_MODEL || '')
+        .split(',')
+        .map((model) => model.trim())
+        .filter(Boolean);
+
+    const candidates = activeGeminiModel
+        ? [activeGeminiModel, ...configuredModels, ...DEFAULT_GEMINI_MODELS]
+        : [...configuredModels, ...DEFAULT_GEMINI_MODELS];
+
+    return [...new Set(candidates)];
+}
+
+function isModelNotFoundError(error) {
+    const errorText = `${error?.message || ''} ${error?.stack || ''}`.toLowerCase();
+    return errorText.includes('404') || errorText.includes('not found');
+}
+
 // Gemini AI call
 async function queryGeminiAI({ imageBase64, returnReason, productSpecs, customerHistory, productHistory }) {
     if (!process.env.GEMINI_API_KEY) {
@@ -54,8 +78,6 @@ async function queryGeminiAI({ imageBase64, returnReason, productSpecs, customer
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
     const filePart = {
         inlineData: {
             mimeType: 'image/jpeg',
@@ -102,11 +124,34 @@ Explain what you observe, whether the reason is supported, and your final recomm
 Only return the Admin Review and JSON Summary.
 `;
 
-    const result = await model.generateContent({
-        contents: [{ parts: [filePart, { text: textPrompt }] }]
-    });
+    let lastError = null;
 
-    return result.response.candidates[0]?.content.parts[0]?.text || "No response";
+    for (const modelName of getGeminiModelCandidates()) {
+        try {
+            const model = genAI.getGenerativeModel({ model: modelName });
+            const result = await model.generateContent({
+                contents: [{ parts: [filePart, { text: textPrompt }] }]
+            });
+
+            activeGeminiModel = modelName;
+            return result.response.candidates[0]?.content.parts[0]?.text || "No response";
+        } catch (error) {
+            lastError = error;
+
+            if (isModelNotFoundError(error)) {
+                console.warn(`Gemini model '${modelName}' is unavailable. Trying the next configured model.`);
+                continue;
+            }
+
+            throw error;
+        }
+    }
+
+    throw new Error(
+        `None of the configured Gemini models are available. Tried: ${getGeminiModelCandidates().join(', ')}. ` +
+        `Set GEMINI_MODEL or GEMINI_MODEL_CANDIDATES in backend/.env to a current model name. ` +
+        `Last error: ${lastError?.message || 'Unknown error'}`
+    );
 }
 
 // Main route

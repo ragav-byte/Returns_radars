@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { FaStar, FaUser } from "react-icons/fa";
 import { v4 as uuidv4 } from "uuid";
 import GeminiPopup from "./GeminiPopup";
 import ReturnHistory from "./ReturnHistory";
 import "./Dashboard.css";
-import { ReactComponent as Walmart } from "./walmart icon.svg";
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
 
@@ -129,7 +129,9 @@ function Dashboard({ user, onLogout, isSigningOut }) {
     <div className="dashboard-page">
       <header className="dashboard-topbar">
         <div className="brand-lockup">
-          <Walmart className="brand-logo" />
+          <span className="brand-star" aria-hidden="true">
+            <FaStar />
+          </span>
           <div>
             <p className="brand-label">ReturnsRadar</p>
             <h1>Customer return desk</h1>
@@ -139,7 +141,7 @@ function Dashboard({ user, onLogout, isSigningOut }) {
         <div className="dashboard-topbar__actions">
           <div className="signed-in-pill">
             <span className="signed-in-pill__avatar">
-              {user.email?.slice(0, 1).toUpperCase()}
+              <FaUser />
             </span>
             <div>
               <strong>{user.email}</strong>
